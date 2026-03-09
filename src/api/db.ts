@@ -1,5 +1,7 @@
-const COMPUTERS_URL = "https://functions.poehali.dev/8fc19e7b-3b29-4a3a-a22c-8c805b56a877";
-const DOCUMENTS_URL = "https://functions.poehali.dev/f72b44cf-e63e-444f-b01f-0017ca14976f";
+const LOCAL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+const BASE = LOCAL ? `http://localhost:8765` : "";
+const COMPUTERS_URL = LOCAL ? `${BASE}/computers` : "https://functions.poehali.dev/8fc19e7b-3b29-4a3a-a22c-8c805b56a877";
+const DOCUMENTS_URL = LOCAL ? `${BASE}/documents` : "https://functions.poehali.dev/f72b44cf-e63e-444f-b01f-0017ca14976f";
 
 async function req(url: string, method: string, body?: object) {
   const res = await fetch(url, {
