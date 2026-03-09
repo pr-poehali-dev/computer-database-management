@@ -1,60 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import Icon from "@/components/ui/icon";
-import { COMPUTERS_INIT, DOCS_INIT, Computer, Doc } from "@/components/shared/types";
+import { Computer, Doc } from "@/components/shared/types";
 import ComputersSection from "@/components/ComputersSection";
 import DocsSection from "@/components/DocsSection";
 
 export default function Index() {
   const [tab, setTab] = useState<"computers" | "docs">("computers");
   const [selectedComputerId, setSelectedComputerId] = useState<string | null>(null);
-  const [computers] = useState<Computer[]>(COMPUTERS_INIT);
-  const [docs] = useState<Doc[]>(DOCS_INIT);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    const hasData = localStorage.getItem("it-computers") || localStorage.getItem("it-docs");
-    if (hasData) setSaved(true);
-  }, []);
-
-  function handleReset() {
-    if (!confirm("Удалить все данные и начать заново? Это действие нельзя отменить.")) return;
-    localStorage.removeItem("it-computers");
-    localStorage.removeItem("it-docs");
-    window.location.reload();
-  }
-
-  function handleExportJSON() {
-    const computers = JSON.parse(localStorage.getItem("it-computers") ?? "[]");
-    const docs = JSON.parse(localStorage.getItem("it-docs") ?? "[]");
-    const data = { version: 1, exportedAt: new Date().toISOString(), computers, docs };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `it-uchet-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-  }
-
-  function handleImportJSON(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const data = JSON.parse(ev.target?.result as string);
-        if (!data.computers || !data.docs) throw new Error("Неверный формат");
-        if (!confirm(`Импортировать ${data.computers.length} компьютеров и ${data.docs.length} документов? Текущие данные будут заменены.`)) return;
-        localStorage.setItem("it-computers", JSON.stringify(data.computers));
-        localStorage.setItem("it-docs", JSON.stringify(data.docs));
-        window.location.reload();
-      } catch {
-        alert("Ошибка: неверный формат файла. Убедитесь, что это файл экспорта ИТ-Учёт.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  }
-
-  const importRef = useRef<HTMLInputElement>(null);
+  const [computers, setComputers] = useState<Computer[]>([]);
 
   function handleSelectComputer(id: string | null) {
     setSelectedComputerId(id);
@@ -105,36 +58,9 @@ export default function Index() {
               </button>
             )}
             <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <Icon name="HardDrive" size={12} />
-              <span className="hidden sm:inline">Сохранено локально</span>
+              <Icon name="Database" size={12} />
+              <span className="hidden sm:inline">База данных</span>
             </div>
-            <div className="h-3 w-px bg-border" />
-            <button
-              onClick={handleExportJSON}
-              title="Экспорт в JSON"
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Icon name="Upload" size={12} />
-              <span className="hidden sm:inline">Экспорт</span>
-            </button>
-            <button
-              onClick={() => importRef.current?.click()}
-              title="Импорт из JSON"
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Icon name="FolderOpen" size={12} />
-              <span className="hidden sm:inline">Импорт</span>
-            </button>
-            <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImportJSON} />
-            <div className="h-3 w-px bg-border" />
-            <button
-              onClick={handleReset}
-              title="Сбросить все данные"
-              className="text-xs text-muted-foreground hover:text-red-400 transition-colors flex items-center gap-1.5"
-            >
-              <Icon name="RotateCcw" size={12} />
-              <span className="hidden sm:inline">Сброс</span>
-            </button>
             <div className="h-3 w-px bg-border" />
             <div className="text-xs text-muted-foreground font-mono-custom">
               {new Date().toLocaleDateString("ru-RU")}
@@ -146,15 +72,14 @@ export default function Index() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {tab === "computers" && (
           <ComputersSection
-            computers={computers}
-            docs={docs}
+            docs={[] as Doc[]}
             onSelect={handleSelectComputer}
             selectedId={selectedComputerId}
+            onComputersLoaded={setComputers}
           />
         )}
         {tab === "docs" && (
           <DocsSection
-            docs={docs}
             computers={computers}
             filterComputerId={selectedComputerId}
           />

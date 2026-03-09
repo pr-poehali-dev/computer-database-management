@@ -1,23 +1,35 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { Computer, Doc, Status, exportCSV } from "@/components/shared/types";
-import { useLocalStorage, EditableCell, StatusCell, SearchBar, FilterSelect, StatCard } from "@/components/shared/TableControls";
+import { EditableCell, StatusCell, SearchBar, FilterSelect, StatCard } from "@/components/shared/TableControls";
+import { getComputers, addComputer, updateComputer, deleteComputer } from "@/api/db";
 
 interface ComputersSectionProps {
-  computers: Computer[];
   docs: Doc[];
   onSelect: (id: string | null) => void;
   selectedId: string | null;
+  onComputersLoaded?: (computers: Computer[]) => void;
 }
 
-export default function ComputersSection({ computers, docs, onSelect, selectedId }: ComputersSectionProps) {
+export default function ComputersSection({ docs, onSelect, selectedId, onComputersLoaded }: ComputersSectionProps) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterLocation, setFilterLocation] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<Computer>>({ status: "активен" });
-  const [list, setList] = useLocalStorage<Computer[]>("it-computers", computers);
+  const [list, setList] = useState<Computer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const data = await getComputers();
+    setList(data);
+    onComputersLoaded?.(data);
+    setLoading(false);
+  }, [onComputersLoaded]);
+
+  useEffect(() => { load(); }, [load]);
 
   const locations = useMemo(() => [...new Set(list.map(c => c.location))], [list]);
 
@@ -36,30 +48,34 @@ export default function ComputersSection({ computers, docs, onSelect, selectedId
     retired: list.filter(c => c.status === "списан").length,
   }), [list]);
 
-  function updateField<K extends keyof Computer>(id: string, key: K, value: Computer[K]) {
+  async function updateField<K extends keyof Computer>(id: string, key: K, value: Computer[K]) {
     setList(prev => prev.map(c => c.id === id ? { ...c, [key]: value } : c));
+    await updateComputer(id, key, value as string);
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!form.name || !form.inventory) return;
-    const newC: Computer = {
-      id: "c" + Date.now(),
+    const payload = {
       name: form.name ?? "",
       inventory: form.inventory ?? "",
       model: form.model ?? "—",
       location: form.location ?? "—",
       user: form.user ?? "—",
-      status: (form.status as Status) ?? "активен",
+      status: form.status ?? "активен",
       ip: form.ip ?? "—",
       os: form.os ?? "—",
       added: new Date().toISOString().slice(0, 10),
     };
+    const res = await addComputer(payload);
+    const newC: Computer = { id: res.id, ...payload } as Computer;
     setList(prev => [newC, ...prev]);
+    onComputersLoaded?.([newC, ...list]);
     setForm({ status: "активен" });
     setShowForm(false);
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
+    await deleteComputer(id);
     setList(prev => prev.filter(c => c.id !== id));
     setDeleteConfirm(null);
   }
@@ -141,7 +157,12 @@ export default function ComputersSection({ computers, docs, onSelect, selectedId
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {loading && (
+                <tr><td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">
+                  <Icon name="Loader" size={16} className="inline mr-2 animate-spin" />Загрузка...
+                </td></tr>
+              )}
+              {!loading && filtered.length === 0 && (
                 <tr><td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">Ничего не найдено</td></tr>
               )}
               {filtered.map(c => {
@@ -165,7 +186,7 @@ export default function ComputersSection({ computers, docs, onSelect, selectedId
                       <EditableCell value={c.user} onSave={v => updateField(c.id, "user", v)} />
                     </td>
                     <td className="px-4 py-2.5">
-                      <StatusCell value={c.status} onSave={v => updateField(c.id, "status", v)} />
+                      <StatusCell value={c.status as Status} onSave={v => updateField(c.id, "status", v)} />
                     </td>
                     <td className="px-4 py-2.5">
                       <EditableCell value={c.ip} onSave={v => updateField(c.id, "ip", v)} mono dim />
@@ -173,28 +194,24 @@ export default function ComputersSection({ computers, docs, onSelect, selectedId
                     <td className="px-4 py-2.5">
                       <button
                         onClick={() => onSelect(isSelected ? null : c.id)}
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
-                          isSelected
-                            ? "bg-primary/20 text-primary font-medium"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-primary/20 hover:text-primary"
                         }`}
                       >
-                        <Icon name="FileText" size={11} />
+                        <Icon name="FileText" size={10} />
                         {docCount}
                       </button>
                     </td>
-                    <td className="px-4 py-2.5 w-10">
+                    <td className="px-4 py-2.5">
                       {deleteConfirm === c.id ? (
-                        <div className="flex items-center gap-1 animate-fade-in">
-                          <button onClick={() => handleDelete(c.id)} className="text-xs text-red-400 hover:text-red-300 font-medium transition-colors">Удалить</button>
-                          <span className="text-muted-foreground text-xs">/</span>
-                          <button onClick={() => setDeleteConfirm(null)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Отмена</button>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => handleDelete(c.id)} className="text-xs text-red-400 hover:text-red-300 font-medium">Удалить</button>
+                          <button onClick={() => setDeleteConfirm(null)} className="text-xs text-muted-foreground hover:text-foreground">Отмена</button>
                         </div>
                       ) : (
                         <button
                           onClick={() => setDeleteConfirm(c.id)}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
-                          title="Удалить"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400"
                         >
                           <Icon name="Trash2" size={14} />
                         </button>
@@ -206,9 +223,11 @@ export default function ComputersSection({ computers, docs, onSelect, selectedId
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 border-t border-border bg-muted/20 text-xs text-muted-foreground">
-          Показано {filtered.length} из {list.length}
-        </div>
+        {!loading && (
+          <div className="px-4 py-2 border-t border-border bg-muted/10 flex items-center justify-between text-xs text-muted-foreground">
+            <span>Показано {filtered.length} из {list.length}</span>
+          </div>
+        )}
       </div>
     </div>
   );

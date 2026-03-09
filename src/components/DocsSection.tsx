@@ -1,22 +1,35 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { Computer, Doc, exportCSV } from "@/components/shared/types";
-import { useLocalStorage, EditableCell, SearchBar, FilterSelect } from "@/components/shared/TableControls";
+import { EditableCell, SearchBar, FilterSelect } from "@/components/shared/TableControls";
+import { getDocuments, addDocument, updateDocument, deleteDocument } from "@/api/db";
 
 interface DocsSectionProps {
-  docs: Doc[];
   computers: Computer[];
   filterComputerId: string | null;
 }
 
-export default function DocsSection({ docs, computers, filterComputerId }: DocsSectionProps) {
+export default function DocsSection({ computers, filterComputerId }: DocsSectionProps) {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterComp, setFilterComp] = useState(filterComputerId ?? "");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<Doc>>({});
-  const [list, setList] = useLocalStorage<Doc[]>("it-docs", docs);
+  const [list, setList] = useState<Doc[]>([]);
+  const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const data = await getDocuments();
+    setList(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // При смене фильтра по компьютеру — обновляем локальный фильтр
+  useEffect(() => { setFilterComp(filterComputerId ?? ""); }, [filterComputerId]);
 
   const types = useMemo(() => [...new Set(list.map(d => d.type))], [list]);
 
@@ -31,14 +44,14 @@ export default function DocsSection({ docs, computers, filterComputerId }: DocsS
     });
   }, [list, search, filterType, filterComp, filterComputerId]);
 
-  function updateField<K extends keyof Doc>(id: string, key: K, value: Doc[K]) {
+  async function updateField<K extends keyof Doc>(id: string, key: K, value: Doc[K]) {
     setList(prev => prev.map(d => d.id === id ? { ...d, [key]: value } : d));
+    await updateDocument(id, key, value as string);
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!form.title || !form.computerId) return;
-    const newD: Doc = {
-      id: "d" + Date.now(),
+    const payload = {
       title: form.title ?? "",
       type: form.type ?? "Прочее",
       computerId: form.computerId ?? "",
@@ -46,12 +59,15 @@ export default function DocsSection({ docs, computers, filterComputerId }: DocsS
       number: form.number ?? "—",
       note: form.note ?? "",
     };
+    const res = await addDocument(payload);
+    const newD: Doc = { id: res.id, ...payload };
     setList(prev => [newD, ...prev]);
     setForm({});
     setShowForm(false);
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
+    await deleteDocument(id);
     setList(prev => prev.filter(d => d.id !== id));
     setDeleteConfirm(null);
   }
@@ -135,7 +151,12 @@ export default function DocsSection({ docs, computers, filterComputerId }: DocsS
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {loading && (
+                <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+                  <Icon name="Loader" size={16} className="inline mr-2 animate-spin" />Загрузка...
+                </td></tr>
+              )}
+              {!loading && filtered.length === 0 && (
                 <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">Ничего не найдено</td></tr>
               )}
               {filtered.map(d => {
@@ -153,27 +174,29 @@ export default function DocsSection({ docs, computers, filterComputerId }: DocsS
                     <td className="px-4 py-2.5">
                       <EditableCell value={d.number} onSave={v => updateField(d.id, "number", v)} mono dim />
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span className="text-sm text-muted-foreground">{comp?.name ?? d.computerId}</span>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                      {comp ? (
+                        <span className="font-mono-custom">{comp.name}</span>
+                      ) : (
+                        <span className="text-red-400/60">{d.computerId}</span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">
                       <EditableCell value={d.date} onSave={v => updateField(d.id, "date", v)} mono dim />
                     </td>
-                    <td className="px-4 py-2.5 max-w-48">
-                      <EditableCell value={d.note || "—"} onSave={v => updateField(d.id, "note", v === "—" ? "" : v)} dim />
+                    <td className="px-4 py-2.5">
+                      <EditableCell value={d.note} onSave={v => updateField(d.id, "note", v)} dim />
                     </td>
-                    <td className="px-4 py-2.5 w-10">
+                    <td className="px-4 py-2.5">
                       {deleteConfirm === d.id ? (
-                        <div className="flex items-center gap-1 animate-fade-in">
-                          <button onClick={() => handleDelete(d.id)} className="text-xs text-red-400 hover:text-red-300 font-medium transition-colors">Удалить</button>
-                          <span className="text-muted-foreground text-xs">/</span>
-                          <button onClick={() => setDeleteConfirm(null)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Отмена</button>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => handleDelete(d.id)} className="text-xs text-red-400 hover:text-red-300 font-medium">Удалить</button>
+                          <button onClick={() => setDeleteConfirm(null)} className="text-xs text-muted-foreground hover:text-foreground">Отмена</button>
                         </div>
                       ) : (
                         <button
                           onClick={() => setDeleteConfirm(d.id)}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
-                          title="Удалить"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400"
                         >
                           <Icon name="Trash2" size={14} />
                         </button>
@@ -185,9 +208,11 @@ export default function DocsSection({ docs, computers, filterComputerId }: DocsS
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 border-t border-border bg-muted/20 text-xs text-muted-foreground">
-          Показано {filtered.length} из {list.length}
-        </div>
+        {!loading && (
+          <div className="px-4 py-2 border-t border-border bg-muted/10 text-xs text-muted-foreground">
+            Показано {filtered.length} из {list.length}
+          </div>
+        )}
       </div>
     </div>
   );
