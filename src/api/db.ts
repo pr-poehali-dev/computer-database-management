@@ -1,7 +1,5 @@
-import func2url from "../../func2url.json";
-
-const COMPUTERS_URL = (func2url as Record<string, string>)["computers"];
-const DOCUMENTS_URL = (func2url as Record<string, string>)["documents"];
+const COMPUTERS_URL = "https://functions.poehali.dev/8fc19e7b-3b29-4a3a-a22c-8c805b56a877";
+const DOCUMENTS_URL = "https://functions.poehali.dev/f72b44cf-e63e-444f-b01f-0017ca14976f";
 
 async function req(url: string, method: string, body?: object) {
   const res = await fetch(url, {
