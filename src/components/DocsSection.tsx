@@ -17,12 +17,19 @@ export default function DocsSection({ computers, filterComputerId }: DocsSection
   const [form, setForm] = useState<Partial<Doc>>({});
   const [list, setList] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await getDocuments();
-    setList(data);
+    setError(null);
+    try {
+      const data = await getDocuments();
+      setList(data);
+    } catch {
+      setError("Не удалось загрузить данные. Убедитесь, что сервер запущен.");
+    }
     setLoading(false);
   }, []);
 
@@ -45,12 +52,20 @@ export default function DocsSection({ computers, filterComputerId }: DocsSection
   }, [list, search, filterType, filterComp, filterComputerId]);
 
   async function updateField<K extends keyof Doc>(id: string, key: K, value: Doc[K]) {
-    setList(prev => prev.map(d => d.id === id ? { ...d, [key]: value } : d));
-    await updateDocument(id, key, value as string);
+    const prev = list;
+    setList(p => p.map(d => d.id === id ? { ...d, [key]: value } : d));
+    try {
+      await updateDocument(id, key, value as string);
+    } catch {
+      setList(prev);
+      setError("Ошибка сохранения. Проверьте, что сервер запущен.");
+    }
   }
 
   async function handleAdd() {
     if (!form.title || !form.computerId) return;
+    setSaving(true);
+    setError(null);
     const payload = {
       title: form.title ?? "",
       type: form.type ?? "Прочее",
@@ -59,17 +74,26 @@ export default function DocsSection({ computers, filterComputerId }: DocsSection
       number: form.number ?? "—",
       note: form.note ?? "",
     };
-    const res = await addDocument(payload);
-    const newD: Doc = { id: res.id, ...payload };
-    setList(prev => [newD, ...prev]);
-    setForm({});
-    setShowForm(false);
+    try {
+      const res = await addDocument(payload);
+      const newD: Doc = { id: res.id, ...payload };
+      setList(prev => [newD, ...prev]);
+      setForm({});
+      setShowForm(false);
+    } catch {
+      setError("Не удалось сохранить. Убедитесь, что сервер запущен (start.bat).");
+    }
+    setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    await deleteDocument(id);
-    setList(prev => prev.filter(d => d.id !== id));
-    setDeleteConfirm(null);
+    try {
+      await deleteDocument(id);
+      setList(prev => prev.filter(d => d.id !== id));
+      setDeleteConfirm(null);
+    } catch {
+      setError("Не удалось удалить запись.");
+    }
   }
 
   function handleExport() {
@@ -86,6 +110,13 @@ export default function DocsSection({ computers, filterComputerId }: DocsSection
 
   return (
     <div className="flex flex-col gap-4 animate-fade-in">
+      {error && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          <Icon name="AlertCircle" size={16} />
+          {error}
+          <button onClick={() => setError(null)} className="ml-auto opacity-60 hover:opacity-100"><Icon name="X" size={14} /></button>
+        </div>
+      )}
       {linkedComp && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-primary/10 border border-primary/20 text-sm text-primary">
           <Icon name="Link" size={14} />
@@ -130,8 +161,11 @@ export default function DocsSection({ computers, filterComputerId }: DocsSection
               className="bg-muted border border-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
           </div>
           <div className="flex gap-2 mt-3">
-            <button onClick={handleAdd} className="px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">Сохранить</button>
-            <button onClick={() => setShowForm(false)} className="px-4 py-2 rounded bg-muted border border-border text-sm text-foreground hover:bg-secondary transition-colors">Отмена</button>
+            <button onClick={handleAdd} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {saving && <Icon name="Loader" size={14} className="animate-spin" />}
+              Сохранить
+            </button>
+            <button onClick={() => setShowForm(false)} disabled={saving} className="px-4 py-2 rounded bg-muted border border-border text-sm text-foreground hover:bg-secondary transition-colors">Отмена</button>
           </div>
         </div>
       )}

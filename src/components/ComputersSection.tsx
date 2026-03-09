@@ -19,13 +19,20 @@ export default function ComputersSection({ docs, onSelect, selectedId, onCompute
   const [form, setForm] = useState<Partial<Computer>>({ status: "активен" });
   const [list, setList] = useState<Computer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await getComputers();
-    setList(data);
-    onComputersLoaded?.(data);
+    setError(null);
+    try {
+      const data = await getComputers();
+      setList(data);
+      onComputersLoaded?.(data);
+    } catch {
+      setError("Не удалось загрузить данные. Убедитесь, что сервер запущен.");
+    }
     setLoading(false);
   }, [onComputersLoaded]);
 
@@ -49,12 +56,20 @@ export default function ComputersSection({ docs, onSelect, selectedId, onCompute
   }), [list]);
 
   async function updateField<K extends keyof Computer>(id: string, key: K, value: Computer[K]) {
-    setList(prev => prev.map(c => c.id === id ? { ...c, [key]: value } : c));
-    await updateComputer(id, key, value as string);
+    const prev = list;
+    setList(p => p.map(c => c.id === id ? { ...c, [key]: value } : c));
+    try {
+      await updateComputer(id, key, value as string);
+    } catch {
+      setList(prev);
+      setError("Ошибка сохранения. Проверьте, что сервер запущен.");
+    }
   }
 
   async function handleAdd() {
     if (!form.name || !form.inventory) return;
+    setSaving(true);
+    setError(null);
     const payload = {
       name: form.name ?? "",
       inventory: form.inventory ?? "",
@@ -66,18 +81,27 @@ export default function ComputersSection({ docs, onSelect, selectedId, onCompute
       os: form.os ?? "—",
       added: new Date().toISOString().slice(0, 10),
     };
-    const res = await addComputer(payload);
-    const newC: Computer = { id: res.id, ...payload } as Computer;
-    setList(prev => [newC, ...prev]);
-    onComputersLoaded?.([newC, ...list]);
-    setForm({ status: "активен" });
-    setShowForm(false);
+    try {
+      const res = await addComputer(payload);
+      const newC: Computer = { id: res.id, ...payload } as Computer;
+      setList(prev => [newC, ...prev]);
+      onComputersLoaded?.([newC, ...list]);
+      setForm({ status: "активен" });
+      setShowForm(false);
+    } catch {
+      setError("Не удалось сохранить. Убедитесь, что сервер запущен (start.bat).");
+    }
+    setSaving(false);
   }
 
   async function handleDelete(id: string) {
-    await deleteComputer(id);
-    setList(prev => prev.filter(c => c.id !== id));
-    setDeleteConfirm(null);
+    try {
+      await deleteComputer(id);
+      setList(prev => prev.filter(c => c.id !== id));
+      setDeleteConfirm(null);
+    } catch {
+      setError("Не удалось удалить запись.");
+    }
   }
 
   function handleExport() {
@@ -90,6 +114,13 @@ export default function ComputersSection({ docs, onSelect, selectedId, onCompute
 
   return (
     <div className="flex flex-col gap-4 animate-fade-in">
+      {error && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          <Icon name="AlertCircle" size={16} />
+          {error}
+          <button onClick={() => setError(null)} className="ml-auto opacity-60 hover:opacity-100"><Icon name="X" size={14} /></button>
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Всего" value={stats.total} icon="Monitor" color="bg-primary/10 text-primary" />
         <StatCard label="Активных" value={stats.active} icon="CheckCircle" color="bg-emerald-500/10 text-emerald-400" />
@@ -136,8 +167,11 @@ export default function ComputersSection({ docs, onSelect, selectedId, onCompute
             </select>
           </div>
           <div className="flex gap-2 mt-3">
-            <button onClick={handleAdd} className="px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">Сохранить</button>
-            <button onClick={() => setShowForm(false)} className="px-4 py-2 rounded bg-muted border border-border text-sm text-foreground hover:bg-secondary transition-colors">Отмена</button>
+            <button onClick={handleAdd} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {saving && <Icon name="Loader" size={14} className="animate-spin" />}
+              Сохранить
+            </button>
+            <button onClick={() => setShowForm(false)} disabled={saving} className="px-4 py-2 rounded bg-muted border border-border text-sm text-foreground hover:bg-secondary transition-colors">Отмена</button>
           </div>
         </div>
       )}
