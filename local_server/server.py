@@ -81,7 +81,7 @@ CORS_HEADERS = {
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        print(f"  {args[0]} {args[1]}")
+        print(f"  [{args[1]}] {args[0]}")
 
     def send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -92,8 +92,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(length)) if length else {}
+        length = int(self.headers.get("Content-Length") or 0)
+        if not length:
+            return {}
+        raw = self.rfile.read(length)
+        return json.loads(raw) if raw else {}
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -105,6 +108,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
         path = parsed.path.rstrip("/")
+        if path not in ("/computers", "/documents"):
+            self._serve_static(parsed.path)
+            return
         conn = get_conn()
         try:
             if path == "/computers":
@@ -124,9 +130,6 @@ class Handler(BaseHTTPRequestHandler):
                         "SELECT id,title,type,computer_id as computerId,date,number,note FROM documents ORDER BY date DESC"
                     ).fetchall()
                 self.send_json([dict(r) for r in rows])
-            else:
-                # Раздаём статику из dist/
-                self._serve_static(parsed.path)
         finally:
             conn.close()
 
