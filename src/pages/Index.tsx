@@ -1,5 +1,28 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
+
+// ─── localStorage hook ────────────────────────────────────────────────────────
+
+function useLocalStorage<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T)) => void] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored ? (JSON.parse(stored) as T) : initial;
+    } catch {
+      return initial;
+    }
+  });
+
+  const set = useCallback((v: T | ((prev: T) => T)) => {
+    setValue(prev => {
+      const next = typeof v === "function" ? (v as (p: T) => T)(prev) : v;
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, [key]);
+
+  return [value, set];
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -224,7 +247,7 @@ function ComputersSection({
   const [filterLocation, setFilterLocation] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<Computer>>({ status: "активен" });
-  const [list, setList] = useState<Computer[]>(computers);
+  const [list, setList] = useLocalStorage<Computer[]>("it-computers", computers);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const locations = useMemo(() => [...new Set(list.map(c => c.location))], [list]);
@@ -432,7 +455,7 @@ function DocsSection({
   const [filterComp, setFilterComp] = useState(filterComputerId ?? "");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Partial<Doc>>({});
-  const [list, setList] = useState<Doc[]>(docs);
+  const [list, setList] = useLocalStorage<Doc[]>("it-docs", docs);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const types = useMemo(() => [...new Set(list.map(d => d.type))], [list]);
@@ -628,6 +651,19 @@ export default function Index() {
   const [selectedComputerId, setSelectedComputerId] = useState<string | null>(null);
   const [computers] = useState<Computer[]>(COMPUTERS_INIT);
   const [docs] = useState<Doc[]>(DOCS_INIT);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const hasData = localStorage.getItem("it-computers") || localStorage.getItem("it-docs");
+    if (hasData) setSaved(true);
+  }, []);
+
+  function handleReset() {
+    if (!confirm("Удалить все данные и начать заново? Это действие нельзя отменить.")) return;
+    localStorage.removeItem("it-computers");
+    localStorage.removeItem("it-docs");
+    window.location.reload();
+  }
 
   function handleSelectComputer(id: string | null) {
     setSelectedComputerId(id);
@@ -677,6 +713,20 @@ export default function Index() {
                 Сбросить фильтр
               </button>
             )}
+            <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+              <Icon name="HardDrive" size={12} />
+              <span>Сохранено локально</span>
+            </div>
+            <div className="h-3 w-px bg-border" />
+            <button
+              onClick={handleReset}
+              title="Сбросить все данные"
+              className="text-xs text-muted-foreground hover:text-red-400 transition-colors flex items-center gap-1"
+            >
+              <Icon name="RotateCcw" size={12} />
+              Сброс
+            </button>
+            <div className="h-3 w-px bg-border" />
             <div className="text-xs text-muted-foreground font-mono-custom">
               {new Date().toLocaleDateString("ru-RU")}
             </div>
